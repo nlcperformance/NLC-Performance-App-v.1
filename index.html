@@ -1,548 +1,635 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NLC Performance Hub</title>
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  AreaChart, Area, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar
+} from 'recharts';
+import { 
+  LayoutDashboard, PlusCircle, Activity, History, 
+  Brain, Zap, Battery, Thermometer, Moon, 
+  ClipboardList, AlertTriangle, Download, Users, 
+  Heart, Settings, Utensils, Shield, Swords, GraduationCap, Gauge,
+  Cpu, CheckCircle, ChevronRight, Play, Square, AlertOctagon
+} from 'lucide-react';
+
+// --- FIREBASE SETUP ---
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, onAuthStateChanged, signInAnonymously 
+} from 'firebase/auth';
+import { 
+  getFirestore, collection, addDoc, doc, 
+  onSnapshot, serverTimestamp, setDoc, getDoc 
+} from 'firebase/firestore';
+
+// ⚠️ REPLACE WITH YOUR REAL FIREBASE CONFIG ⚠️
+const firebaseConfig = {
+  apiKey: "", 
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: ""
+};
+
+// Initialize Firebase (Conditional for "No Config" preview safety)
+let app, auth, db;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (e) {
+  console.warn("Firebase not configured. Using local state mode.");
+}
+const appId = "nlc-production-v1";
+
+// --- PROGRAMMING LIBRARY (Digitized from Screenshots) ---
+const PROGRAM_TEMPLATES = {
+  // === QUADRANT 1: PRECISION // FAST (The Sniper) ===
+  "pf_strength": {
+    name: "Sniper Strength (Precision/Fast)",
+    type: "Strength",
+    protocol: "Max Strength",
+    category: "Precision",
+    exercises: [
+      { name: "A. Box Jumps", sets: 5, reps: "3", weight: "Max Height", rpe: 9, notes: "Full recovery." },
+      { name: "B. Trap Bar DL", sets: 5, reps: "3", weight: "Heavy", rpe: 8, notes: "Explosive concentric." },
+      { name: "C. Weighted Pull Up", sets: 5, reps: "3", weight: "Heavy", rpe: 8, notes: "3 mins rest." },
+      { name: "D. Farmers Carry", sets: 3, reps: "20s", weight: "Heavy", rpe: 9, notes: "Short & Heavy." }
+    ]
+  },
+  "strength_a": {
+    name: "Strength A (Zercher/DL)",
+    type: "Strength",
+    protocol: "Max Strength",
+    category: "Precision",
+    exercises: [
+      { name: "Warm Up", sets: 1, reps: "Flow", weight: "-", rpe: 1 },
+      { name: "Pull Ups", sets: 5, reps: "3", weight: "BW", rpe: 8 },
+      { name: "Zercher Squat", sets: 5, reps: "3", weight: "Heavy", rpe: 7 },
+      { name: "Deadlift", sets: 5, reps: "5", weight: "Heavy", rpe: 7 },
+      { name: "Mace Flow", sets: 1, reps: "6 mins", weight: "-", rpe: 6 }
+    ]
+  },
+
+  // === QUADRANT 2: PRECISION // SLOW (The Architect) ===
+  "ps_strength": {
+    name: "Architect Strength (Precision/Slow)",
+    type: "Strength",
+    protocol: "Hypertrophy",
+    category: "Precision",
+    exercises: [
+      { name: "A. Tempo Squat", sets: 4, reps: "6", weight: "Medium", rpe: 8, notes: "Tempo: 3030." },
+      { name: "B. Ring Rows", sets: 4, reps: "8-10", weight: "BW", rpe: 8, notes: "Pause 2s at top." },
+      { name: "C. RDL", sets: 4, reps: "8", weight: "Medium", rpe: 7 },
+      { name: "D. Dead Bug", sets: 3, reps: "12", weight: "BW", rpe: 7 }
+    ]
+  },
+
+  // === QUADRANT 3: CAPACITY // FAST (The Blitz) ===
+  "cf_hybrid": {
+    name: "Blitz Hybrid (Capacity/Fast)",
+    type: "Hybrid",
+    protocol: "Power Endurance",
+    category: "Capacity",
+    exercises: [
+      { name: "EMOM 10: Power Clean", sets: 10, reps: "3", weight: "Medium", rpe: 7 },
+      { name: "A1. Front Squat", sets: 4, reps: "5", weight: "Medium", rpe: 8 },
+      { name: "A2. Box Jump", sets: 4, reps: "5", weight: "BW", rpe: 8 },
+      { name: "Finisher: KB Swing", sets: 1, reps: "100", weight: "24kg", rpe: 9 }
+    ]
+  },
+  "hybrid_a": {
+    name: "Hybrid A (Warrior)",
+    type: "Hybrid",
+    protocol: "Power/Strength",
+    category: "Capacity",
+    exercises: [
+      { name: "Warm Up Circuit", sets: 1, reps: "1 round", weight: "-", rpe: 2 },
+      { name: "Power: Clean & Press", sets: 3, reps: "10", weight: "Medium", rpe: 7 },
+      { name: "Str: Pull Up", sets: 5, reps: "4", weight: "BW", rpe: 8 },
+      { name: "Str: Zercher Squat", sets: 5, reps: "3", weight: "Heavy", rpe: 8 },
+      { name: "Finisher: Farmers Carry", sets: 5, reps: "30s", weight: "Heavy", rpe: 9 }
+    ]
+  },
+
+  // === QUADRANT 4: CAPACITY // SLOW (The Diesel) ===
+  "cs_hypertrophy": {
+    name: "Diesel Mass (Capacity/Slow)",
+    type: "Strength",
+    protocol: "Hypertrophy",
+    category: "Capacity",
+    exercises: [
+      { name: "A. Back Squat (Wave)", sets: 4, reps: "10/8/6/20", weight: "Wave", rpe: 9 },
+      { name: "B. DB Bench Press", sets: 4, reps: "12-15", weight: "Medium", rpe: 9 },
+      { name: "C1. Lunges", sets: 3, reps: "20", weight: "BW", rpe: 8 },
+      { name: "C2. Push Ups", sets: 3, reps: "Max", weight: "BW", rpe: 9 },
+      { name: "Finisher: Sled Push", sets: 1, reps: "10 mins", weight: "Heavy", rpe: 10 }
+    ]
+  },
+  "abc_standard": {
+    name: "Dan John's ABC",
+    type: "Strength",
+    protocol: "Hypertrophy",
+    category: "Capacity",
+    exercises: [
+      { name: "Armour Building Complex", sets: 30, reps: "1 cycle", weight: "Double KB", rpe: 6, notes: "EMOM 30 mins." }
+    ]
+  },
+
+  // --- RECOVERY (Universal) ---
+  "zone_2": {
+    name: "Zone 2 Base",
+    type: "Cardio",
+    protocol: "Zone 2",
+    category: "Recovery",
+    exercises: [
+      { name: "Run/Row/Bike", sets: 1, reps: "30-45m", weight: "-", rpe: 3, notes: "Nose breathing only. HR < 140." }
+    ]
+  },
+  "cool_down_full": {
+    name: "NLC Full Mobility",
+    type: "Recovery",
+    protocol: "Mobility",
+    category: "Recovery",
+    exercises: [
+      { name: "Passive Hang", sets: 1, reps: "20s", weight: "BW", rpe: 1 },
+      { name: "Big Three Holds", sets: 4, reps: "10s", weight: "BW", rpe: 2 },
+      { name: "90/90 Stretch", sets: 1, reps: "2 mins", weight: "BW", rpe: 1 },
+      { name: "Cobra Pose", sets: 1, reps: "10x", weight: "BW", rpe: 1 }
+    ]
+  }
+};
+
+// --- QUIZ DATA ---
+const ASSESSMENT_QUESTIONS = [
+  { id: 1, category: 'OS', text: "Two hours after a super high-intensity workout, how do you feel?", optionA: "Wired, anxious, hard to sleep.", optionB: "Relaxed, hungry, good 'tired'.", valA: 'Precision', valB: 'Capacity' },
+  { id: 2, category: 'OS', text: "When learning a complex new skill, you prefer...", optionA: "Silence, structure, perfect reps.", optionB: "Trial and error, figuring it out.", valA: 'Precision', valB: 'Capacity' },
+  { id: 3, category: 'OS', text: "Under high life stress, your training usually...", optionA: "Suffers. You need to back off.", optionB: "Is your escape. You go harder.", valA: 'Precision', valB: 'Capacity' },
+  { id: 4, category: 'Engine', text: "Historically, which sports were you better at?", optionA: "Sprints, Jumps, Striking (Power).", optionB: "Distance, Rugby 80m, Rowing.", valA: 'Fast', valB: 'Slow' },
+  { id: 5, category: 'Engine', text: "If you do a 5RM squat set, how do you feel about a 6th rep?", optionA: "Impossible. Power drops off a cliff.", optionB: "I could grind out 2-3 more ugly reps.", valA: 'Fast', valB: 'Slow' },
+  { id: 6, category: 'Engine', text: "How do your muscles feel the day after volume training?", optionA: "Deep soreness, wrecked for days.", optionB: "Mild soreness, ready to go again.", valA: 'Fast', valB: 'Slow' }
+];
+
+// --- COMPONENTS ---
+
+const Card = ({ children, className = "" }) => (
+  <div className={`bg-[#111] border border-gray-800 rounded-sm shadow-sm ${className}`}>
+    {children}
+  </div>
+);
+
+const Badge = ({ children, color = "gray" }) => {
+  const colors = {
+    orange: "bg-orange-900/30 text-orange-500 border-orange-800",
+    green: "bg-emerald-900/30 text-emerald-500 border-emerald-800",
+    blue: "bg-blue-900/30 text-blue-500 border-blue-800",
+    gray: "bg-gray-800 text-gray-400 border-gray-700",
+  };
+  return (
+    <span className={`px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider border ${colors[color] || colors.gray}`}>
+      {children}
+    </span>
+  );
+};
+
+const SectionHeader = ({ title, icon: Icon }) => (
+  <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-800">
+    {Icon && <Icon size={16} className="text-orange-500" />}
+    <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">{title}</h2>
+  </div>
+);
+
+// --- MAIN APPLICATION ---
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [view, setView] = useState('dashboard'); 
+  const [workouts, setWorkouts] = useState([]);
+  const [checkins, setCheckins] = useState([]);
+  const [profile, setProfile] = useState({ name: 'Athlete', goal: '', os: 'Unknown', engine: 'Unknown', isCompeting: false });
+  const [loading, setLoading] = useState(true);
+
+  // --- Auth & Data Init ---
+  useEffect(() => {
+    if (auth) {
+      signInAnonymously(auth).catch(console.error);
+      return onAuthStateChanged(auth, (u) => {
+        setUser(u);
+        if (u) setLoading(false);
+      });
+    } else {
+      setLoading(false); // Dev mode
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user || !db) return;
     
-    <!-- React & ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    
-    <!-- Babel Standalone (for JSX) -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Recharts (Charts) -->
-    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        'nlc-orange': '#ea580c',
-                        'nlc-green': '#10b981',
-                        'nlc-blue': '#3b82f6',
-                        'nlc-dark': '#0a0a0a',
-                        'nlc-card': '#171717',
-                        'nlc-border': '#262626',
-                        'nlc-text-muted': '#a3a3a3',
-                    },
-                    fontFamily: {
-                        sans: ['Oswald', 'sans-serif'],
-                        serif: ['Merriweather', 'serif'],
-                    }
-                }
-            }
-        }
-    </script>
-    <!-- Google Fonts -->
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&family=Oswald:wght@200;400;500;700&display=swap');
-        
-        body {
-            background-color: #0a0a0a;
-            color: #e5e5e5;
-            font-family: 'Merriweather', serif;
-        }
-        
-        h1, h2, h3, h4, .font-tech {
-            font-family: 'Oswald', sans-serif;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #262626; border-radius: 9999px; }
-        ::-webkit-scrollbar-thumb:hover { background: #404040; }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
-    <script type="text/babel" data-presets="react,stage-3">
-        const { useState, useEffect } = React;
-        const { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = Recharts;
-        // --- Icons (Inlined for Portability) ---
-        const Icon = ({ path, size = 24, className }) => (
-            <svg 
-                xmlns="http://www.w3.org/2000/svg" 
-                width={size} 
-                height={size} 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                className={className}
-            >
-                {path}
-            </svg>
-        );
-        const Icons = {
-            Activity: (props) => <Icon {...props} path={<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>} />,
-            Brain: (props) => <Icon {...props} path={<><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z"/></>} />,
-            Zap: (props) => <Icon {...props} path={<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>} />,
-            Flame: (props) => <Icon {...props} path={<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>} />,
-            LayoutDashboard: (props) => <Icon {...props} path={<><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></>} />,
-            ClipboardList: (props) => <Icon {...props} path={<><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></>} />,
-            Dumbbell: (props) => <Icon {...props} path={<><path d="m6.5 6.5 11 11"/><path d="m21 21-1-1"/><path d="m3 3 1 1"/><path d="m18 22 4-4"/><path d="m2 6 4-4"/><path d="m3 10 7-7"/><path d="m14 21 7-7"/></>} />,
-            User: (props) => <Icon {...props} path={<><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>} />,
-            AlertTriangle: (props) => <Icon {...props} path={<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>} />,
-            Heart: (props) => <Icon {...props} path={<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>} />,
-            Moon: (props) => <Icon {...props} path={<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>} />,
-            Smile: (props) => <Icon {...props} path={<><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/></>} />,
-            Move: (props) => <Icon {...props} path={<polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/>} />,
-            Utensils: (props) => <Icon {...props} path={<path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></>} />,
-        };
-        // --- Utilities ---
-        function cn(...inputs) {
-            return inputs.filter(Boolean).join(' ');
-        }
-        // --- Mock Data ---
-        const MOCK_WORKOUTS = [
-            { id: 1, date: '2023-10-24', title: 'Sniper Strength A', type: 'Strength', duration: 45, rpe: 7, predictedRpe: 7 },
-            { id: 2, date: '2023-10-26', title: 'Zone 2 Recovery', type: 'Recovery', duration: 60, rpe: 4, predictedRpe: 3 },
-            { id: 3, date: '2023-10-28', title: 'Diesel Mass B', type: 'Hypertrophy', duration: 55, rpe: 8, predictedRpe: 8 },
-        ];
-        const MOCK_CHECKINS = [
-            { id: 1, date: '2023-10-24', sleep: 4, soreness: 2, mood: 4, digestion: 4, movement: 3, grip: 50, co2: 30 },
-            { id: 2, date: '2023-10-25', sleep: 3, soreness: 3, mood: 3, digestion: 3, movement: 4, grip: 48, co2: 25 },
-            { id: 3, date: '2023-10-26', sleep: 5, soreness: 1, mood: 5, digestion: 5, movement: 5, grip: 52, co2: 35 },
-            { id: 4, date: '2023-10-27', sleep: 2, soreness: 4, mood: 2, digestion: 2, movement: 2, grip: 35, co2: 15 },
-            { id: 5, date: '2023-10-28', sleep: 4, soreness: 2, mood: 4, digestion: 4, movement: 4, grip: 51, co2: 32 },
-        ];
-        const CHART_DATA = [
-            { name: 'Mon', load: 40, readiness: 80 },
-            { name: 'Tue', load: 60, readiness: 75 },
-            { name: 'Wed', load: 20, readiness: 90 },
-            { name: 'Thu', load: 90, readiness: 40 },
-            { name: 'Fri', load: 30, readiness: 60 },
-            { name: 'Sat', load: 70, readiness: 70 },
-            { name: 'Sun', load: 0, readiness: 95 },
-        ];
-        // --- Components ---
-        const Card = ({ children, className, title, icon: Icon, alert }) => (
-            <div className={cn(
-                "bg-nlc-card border border-nlc-border p-4 relative overflow-hidden group hover:border-nlc-orange/30 transition-colors",
-                alert ? "border-red-500/50" : "",
-                className
-            )}>
-                {(title || Icon) && (
-                <div className="flex items-center gap-2 mb-4 text-nlc-text-muted">
-                    {Icon && <Icon size={16} />}
-                    {title && <h3 className="font-tech text-sm tracking-wider">{title}</h3>}
-                </div>
-                )}
-                {children}
-                <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-nlc-text-muted/20" />
-                <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-nlc-text-muted/20" />
+    // Listeners for real-time updates would go here
+    // For this artifact, we will rely on local state updates for responsiveness
+    // In a real app, you'd use onSnapshot()
+  }, [user]);
+
+  // --- Calculations ---
+  const stats = useMemo(() => {
+    const totalMins = workouts.reduce((acc, curr) => acc + (parseInt(curr.duration) || 0), 0);
+    // Determine system status based on latest checkin
+    const lastCheck = checkins[0];
+    const systemStatus = lastCheck?.soreness > 3 ? "WARNING" : "OPTIMAL";
+    return { totalMins, systemStatus };
+  }, [workouts, checkins]);
+
+  // --- VIEWS ---
+
+  const Sidebar = () => (
+    <div className="w-full md:w-64 bg-[#050505] border-r border-gray-800 flex-shrink-0 flex flex-col h-full font-mono text-sm">
+      <div className="p-6 border-b border-gray-800 flex flex-col items-center text-center">
+        <div className="mb-4 h-16 w-16 relative flex items-center justify-center border-2 border-orange-600 rounded-full">
+           <div className="text-2xl font-black text-orange-500 tracking-tighter">NLC</div>
+        </div>
+        <div className="font-bold tracking-widest text-white">NLC <span className="text-orange-500">PERF.</span></div>
+        <p className="text-[10px] text-gray-500 uppercase mt-1">Tactical Holistic</p>
+      </div>
+
+      <nav className="flex-1 px-2 space-y-1 py-6">
+        {[
+          { id: 'dashboard', label: 'System Status', icon: LayoutDashboard },
+          { id: 'assessment', label: 'Diagnostic', icon: Gauge },
+          { id: 'checkin', label: '4 Doctors Check', icon: ClipboardList },
+          { id: 'log', label: 'Log Protocol', icon: PlusCircle },
+          { id: 'history', label: 'Data Logs', icon: History },
+          { id: 'settings', label: 'Configuration', icon: Settings },
+        ].map((item) => (
+          <button 
+            key={item.id}
+            onClick={() => setView(item.id)}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-sm transition-all ${
+              view === item.id 
+                ? 'bg-orange-900/20 text-orange-500 border-r-2 border-orange-500' 
+                : 'text-gray-500 hover:text-gray-300 hover:bg-gray-900'
+            }`}
+          >
+            <item.icon size={16} />
+            <span className="uppercase tracking-wider font-medium">{item.label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <div className="p-4 border-t border-gray-800">
+        <div className="bg-gray-900 p-3 rounded border border-gray-800">
+          <div className="text-xs text-gray-500 uppercase mb-1">Profile Loaded</div>
+          <div className="text-white font-bold flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${profile.isCompeting ? 'bg-red-500' : 'bg-green-500'}`}></div>
+            {profile.name}
+          </div>
+          <div className="text-xs text-orange-500 mt-1 font-mono">{profile.os} // {profile.engine}</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const DashboardView = () => {
+    // 4 Doctors Data (Mock)
+    const doctorData = [
+      { subject: 'Dr. Diet', A: 80, fullMark: 100 },
+      { subject: 'Dr. Quiet', A: 65, fullMark: 100 },
+      { subject: 'Dr. Happy', A: 90, fullMark: 100 },
+      { subject: 'Dr. Move', A: 70, fullMark: 100 },
+    ];
+
+    return (
+      <div className="max-w-6xl mx-auto space-y-6">
+        <header className="flex justify-between items-end border-b border-gray-800 pb-4">
+          <div>
+            <h1 className="text-3xl font-black text-white uppercase tracking-tight">System Overview</h1>
+            <p className="text-gray-500 font-mono text-xs mt-1">BIO-METRIC TELEMETRY: ACTIVE</p>
+          </div>
+          <div className="flex gap-2">
+             <div className="px-4 py-1 bg-gray-900 border border-gray-700 rounded text-xs text-gray-400 font-mono flex items-center gap-2">
+               STATUS: <span className={stats.systemStatus === 'OPTIMAL' ? 'text-green-500' : 'text-red-500'}>{stats.systemStatus}</span>
+             </div>
+          </div>
+        </header>
+
+        {/* ALERTS */}
+        {profile.isCompeting && (
+          <div className="bg-red-900/20 border-l-2 border-red-600 p-4 flex items-center gap-4">
+             <AlertOctagon className="text-red-500" />
+             <div>
+               <h3 className="text-red-500 font-bold uppercase text-sm">Competition Protocol Active</h3>
+               <p className="text-red-400 text-xs">Volume restricted. Prioritizing nervous system recovery.</p>
+             </div>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* LEFT COL: 4 DOCTORS */}
+          <Card className="p-6 col-span-1">
+            <SectionHeader title="4 Doctors Status" icon={Activity} />
+            <div className="h-64 w-full flex items-center justify-center">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={doctorData}>
+                  <PolarGrid stroke="#333" />
+                  <PolarAngleAxis dataKey="subject" tick={{ fill: '#666', fontSize: 10 }} />
+                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                  <Radar name="Status" dataKey="A" stroke="#ea580c" fill="#ea580c" fillOpacity={0.3} />
+                </RadarChart>
+              </ResponsiveContainer>
             </div>
-        );
-        const Button = ({ children, onClick, variant = 'primary', className, ...props }) => {
-            const variants = {
-                primary: "bg-nlc-orange text-white hover:bg-orange-700",
-                secondary: "bg-nlc-border text-gray-200 hover:bg-neutral-700",
-                ghost: "bg-transparent text-nlc-text-muted hover:text-white",
-                danger: "bg-red-900/30 text-red-400 border border-red-900/50 hover:bg-red-900/50",
-                success: "bg-emerald-900/30 text-emerald-400 border border-emerald-900/50 hover:bg-emerald-900/50"
-            };
-            return (
-                <button
-                onClick={onClick}
-                className={cn(
-                    "px-4 py-2 font-tech text-sm uppercase tracking-wide transition-all active:scale-95 flex items-center justify-center gap-2",
-                    variants[variant],
-                    className
-                )}
-                {...props}
-                >
-                {children}
+            <div className="grid grid-cols-2 gap-2 mt-4 text-center">
+               <div className="bg-gray-900 p-2 rounded border border-gray-800">
+                 <div className="text-[10px] text-gray-500 uppercase">Dr. Quiet</div>
+                 <div className="text-white font-mono font-bold">65%</div>
+               </div>
+               <div className="bg-gray-900 p-2 rounded border border-gray-800">
+                 <div className="text-[10px] text-gray-500 uppercase">Dr. Diet</div>
+                 <div className="text-white font-mono font-bold">80%</div>
+               </div>
+            </div>
+          </Card>
+
+          {/* CENTER COL: RECOMMENDED PROTOCOL */}
+          <div className="lg:col-span-2 space-y-4">
+             <Card className="p-6 h-full flex flex-col justify-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-10">
+                   <Brain size={120} className="text-white" />
+                </div>
+                <SectionHeader title="Operating System Recommendation" icon={Cpu} />
+                
+                <div className="mb-6">
+                   <h3 className="text-2xl text-white font-bold mb-2">
+                     {profile.os === 'Precision' ? 'NEURAL PROTOCOL' : profile.os === 'Capacity' ? 'CAPACITY PROTOCOL' : 'EXPLORER PHASE'}
+                   </h3>
+                   <p className="text-gray-400 text-sm max-w-md">
+                     {profile.os === 'Precision' 
+                       ? 'System sensitivity high. Prioritize low reps, perfect mechanics, and extended rest intervals. Avoid lactate accumulation.'
+                       : profile.os === 'Capacity' 
+                       ? 'Metabolic tolerance high. Prioritize density, incomplete rest, and volume accumulation. Feed the engine.'
+                       : 'Baseline testing required. Execute diagnostic protocols to determine neuro-physical coordinates.'}
+                   </p>
+                </div>
+
+                <div className="flex gap-4">
+                   <button onClick={() => setView('log')} className="bg-orange-600 hover:bg-orange-700 text-white px-6 py-2 rounded-sm text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+                     <Play size={16} fill="currentColor" /> Initiate Session
+                   </button>
+                   <button onClick={() => setView('checkin')} className="bg-gray-800 hover:bg-gray-700 text-white px-6 py-2 rounded-sm text-sm font-bold uppercase tracking-wider">
+                     Update Bio-Metrics
+                   </button>
+                </div>
+             </Card>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const AssessmentView = () => {
+    const [step, setStep] = useState(0);
+    const [scores, setScores] = useState({ os: 0, engine: 0 });
+
+    const handleAnswer = (val, category) => {
+      setScores(prev => ({
+        ...prev,
+        [category.toLowerCase()]: prev[category.toLowerCase()] + (val === 'A' ? 1 : -1)
+      }));
+      if (step < ASSESSMENT_QUESTIONS.length - 1) {
+        setStep(step + 1);
+      } else {
+        finishAssessment();
+      }
+    };
+
+    const finishAssessment = () => {
+      const finalOS = scores.os >= 0 ? 'Precision' : 'Capacity';
+      const finalEngine = scores.engine >= 0 ? 'Fast' : 'Slow';
+      const newProfile = { ...profile, os: finalOS, engine: finalEngine };
+      setProfile(newProfile);
+      setStep(ASSESSMENT_QUESTIONS.length);
+    };
+
+    if (step === ASSESSMENT_QUESTIONS.length) {
+      return (
+        <div className="max-w-2xl mx-auto pt-10 text-center">
+           <div className="bg-gray-900 border border-orange-500/50 p-8 rounded-sm relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-1 bg-orange-500"></div>
+              <CheckCircle size={48} className="text-orange-500 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-white uppercase tracking-widest mb-2">Diagnostic Complete</h2>
+              <p className="text-gray-400 mb-8 font-mono">NEURO-PHYSICAL COORDINATES ESTABLISHED</p>
+              
+              <div className="grid grid-cols-2 gap-4 mb-8">
+                 <div className="bg-black p-4 border border-gray-800">
+                    <div className="text-xs text-gray-500 uppercase font-bold">OS (Brain)</div>
+                    <div className="text-xl text-white font-mono">{profile.os}</div>
+                 </div>
+                 <div className="bg-black p-4 border border-gray-800">
+                    <div className="text-xs text-gray-500 uppercase font-bold">Engine (Body)</div>
+                    <div className="text-xl text-white font-mono">{profile.engine}</div>
+                 </div>
+              </div>
+              <button onClick={() => setView('dashboard')} className="text-orange-500 hover:text-white uppercase text-sm font-bold tracking-widest">Return to Command &rarr;</button>
+           </div>
+        </div>
+      );
+    }
+
+    const q = ASSESSMENT_QUESTIONS[step];
+
+    return (
+      <div className="max-w-xl mx-auto pt-10">
+        <div className="mb-8 flex justify-between items-end">
+           <span className="text-xs font-bold text-orange-500 uppercase tracking-widest">Diagnostic Sequence {step + 1} / {ASSESSMENT_QUESTIONS.length}</span>
+           <span className="text-xs font-mono text-gray-600">{Math.round(((step)/ASSESSMENT_QUESTIONS.length)*100)}%</span>
+        </div>
+        <div className="w-full bg-gray-900 h-1 mb-8">
+           <div className="bg-orange-600 h-1 transition-all duration-300" style={{width: `${((step)/ASSESSMENT_QUESTIONS.length)*100}%`}}></div>
+        </div>
+
+        <Card className="p-8">
+           <h2 className="text-lg font-bold text-white mb-8 leading-relaxed">{q.text}</h2>
+           <div className="space-y-4">
+             <button onClick={() => handleAnswer('A', q.category)} className="w-full text-left p-4 bg-gray-900 border border-gray-800 hover:border-orange-500 transition-all group">
+               <div className="font-mono text-orange-500 text-xs mb-1">OPTION A</div>
+               <div className="text-gray-300 group-hover:text-white">{q.optionA}</div>
+             </button>
+             <button onClick={() => handleAnswer('B', q.category)} className="w-full text-left p-4 bg-gray-900 border border-gray-800 hover:border-orange-500 transition-all group">
+               <div className="font-mono text-orange-500 text-xs mb-1">OPTION B</div>
+               <div className="text-gray-300 group-hover:text-white">{q.optionB}</div>
+             </button>
+           </div>
+        </Card>
+      </div>
+    );
+  };
+
+  const CheckInView = () => {
+    const [formData, setFormData] = useState({ sleep: 3, soreness: 2, stress: 2, diet: 3, purpose: 3, grip: '', co2: '' });
+    
+    const handleSubmit = (e) => {
+      e.preventDefault();
+      const newCheckin = { ...formData, date: new Date().toISOString() };
+      setCheckins([newCheckin, ...checkins]);
+      setView('dashboard');
+    };
+
+    const SliderGroup = ({ label, icon: Icon, value, setter }) => (
+      <div>
+        <div className="flex justify-between mb-2">
+          <label className="text-xs font-bold text-gray-400 uppercase flex items-center gap-2"><Icon size={14} className="text-orange-500"/> {label}</label>
+          <span className="text-xs font-mono text-white">{value}/5</span>
+        </div>
+        <div className="flex gap-1">
+          {[1,2,3,4,5].map(v => (
+            <button key={v} type="button" onClick={() => setter(v)} className={`h-8 flex-1 border border-gray-800 ${value >= v ? 'bg-orange-600' : 'bg-gray-900'}`}></button>
+          ))}
+        </div>
+      </div>
+    );
+
+    return (
+      <div className="max-w-xl mx-auto">
+        <header className="mb-6"><h1 className="text-2xl font-black text-white uppercase">Daily Bio-Metrics</h1></header>
+        <Card className="p-6">
+          <form onSubmit={handleSubmit} className="space-y-8">
+            <div className="space-y-6">
+              <SectionHeader title="The 4 Doctors" icon={Heart} />
+              <SliderGroup label="Dr. Quiet (Sleep Quality)" icon={Moon} value={formData.sleep} setter={v => setFormData({...formData, sleep: v})} />
+              <SliderGroup label="Dr. Diet (Digestion/Fuel)" icon={Utensils} value={formData.diet} setter={v => setFormData({...formData, diet: v})} />
+              <SliderGroup label="Dr. Happiness (Purpose)" icon={Brain} value={formData.purpose} setter={v => setFormData({...formData, purpose: v})} />
+            </div>
+
+            <div className="space-y-6 pt-6 border-t border-gray-800">
+              <SectionHeader title="System Load" icon={Activity} />
+              <SliderGroup label="Structural Stress (Soreness)" icon={Thermometer} value={formData.soreness} setter={v => setFormData({...formData, soreness: v})} />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase block mb-2">Grip Strength (kg)</label>
+                  <input type="number" className="w-full bg-gray-900 border border-gray-800 text-white p-2 font-mono" value={formData.grip} onChange={e => setFormData({...formData, grip: e.target.value})} placeholder="00.0" />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase block mb-2">CO2 Tolerance (sec)</label>
+                  <input type="number" className="w-full bg-gray-900 border border-gray-800 text-white p-2 font-mono" value={formData.co2} onChange={e => setFormData({...formData, co2: e.target.value})} placeholder="00" />
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" className="w-full bg-white text-black font-bold uppercase tracking-widest py-3 hover:bg-gray-200">Submit Telemetry</button>
+          </form>
+        </Card>
+      </div>
+    );
+  };
+
+  const LogWorkoutView = () => {
+    const [selectedTemplate, setSelectedTemplate] = useState(null);
+    
+    // Filter Logic
+    const showPrecisionFast = (profile.os === 'Precision' && profile.engine === 'Fast');
+    const showPrecisionSlow = (profile.os === 'Precision' && profile.engine === 'Slow');
+    const showCapacityFast = (profile.os === 'Capacity' && profile.engine === 'Fast');
+    const showCapacitySlow = (profile.os === 'Capacity' && profile.engine === 'Slow');
+    
+    const ProgramButton = ({ templateKey, label, subLabel }) => (
+      <button onClick={() => setSelectedTemplate(PROGRAM_TEMPLATES[templateKey])} className="text-left bg-gray-900 border border-gray-800 p-4 hover:border-orange-500 transition-all group">
+        <div className="text-white font-bold text-sm mb-1 group-hover:text-orange-500">{label}</div>
+        <div className="text-gray-500 text-xs font-mono">{subLabel}</div>
+      </button>
+    );
+
+    if (selectedTemplate) {
+      return (
+        <div className="max-w-2xl mx-auto">
+           <button onClick={() => setSelectedTemplate(null)} className="text-gray-500 text-xs uppercase font-bold mb-4 hover:text-white">&larr; Back to Selection</button>
+           <Card className="p-0 overflow-hidden">
+             <div className="bg-gray-900 p-6 border-b border-gray-800">
+               <h2 className="text-xl font-bold text-white uppercase">{selectedTemplate.name}</h2>
+               <div className="flex gap-2 mt-2">
+                 <Badge color="orange">{selectedTemplate.category}</Badge>
+                 <Badge color="gray">{selectedTemplate.protocol}</Badge>
+               </div>
+             </div>
+             <div className="p-6 space-y-4">
+               {selectedTemplate.exercises.map((ex, i) => (
+                 <div key={i} className="flex items-start gap-4 pb-4 border-b border-gray-800 last:border-0">
+                   <div className="mt-1"><Square size={16} className="text-gray-600" /></div>
+                   <div className="flex-1">
+                     <div className="text-white font-bold text-sm">{ex.name}</div>
+                     {ex.notes && <div className="text-gray-500 text-xs italic mt-1">{ex.notes}</div>}
+                   </div>
+                   <div className="text-right font-mono text-xs text-orange-500">
+                     <div>{ex.sets} x {ex.reps}</div>
+                     <div>{ex.weight}</div>
+                   </div>
+                 </div>
+               ))}
+             </div>
+             <div className="p-6 bg-gray-900 border-t border-gray-800">
+                <button onClick={() => { 
+                  setWorkouts([...workouts, { ...selectedTemplate, date: new Date().toISOString(), duration: 60 }]); 
+                  setView('dashboard'); 
+                }} className="w-full bg-orange-600 text-white font-bold uppercase tracking-widest py-3 hover:bg-orange-500">
+                  Complete Session
                 </button>
-            );
-        };
-        const Badge = ({ children, type }) => {
-            const styles = {
-                precision: "text-nlc-blue bg-nlc-blue/10 border-nlc-blue/20",
-                capacity: "text-nlc-orange bg-nlc-orange/10 border-nlc-orange/20",
-                recovery: "text-nlc-green bg-nlc-green/10 border-nlc-green/20",
-                neutral: "text-gray-400 bg-gray-800/50 border-gray-700",
-                alert: "text-red-400 bg-red-900/20 border-red-500/30"
-            };
-            return (
-                <span className={cn("px-2 py-0.5 text-xs font-tech border uppercase", styles[type] || styles.neutral)}>
-                {children}
-                </span>
-            );
-        };
-        // --- Views ---
-        const Hub = ({ profile, checkins }) => {
-            const isPrecise = profile.type === 'Precision';
-            const latest = checkins[checkins.length - 1];
-            const cnsFatigue = latest.grip < 40 || latest.co2 < 20; 
-            return (
-                <div className="space-y-6">
-                <header className="flex justify-between items-end border-b border-nlc-border pb-4">
-                    <div>
-                    <h1 className="text-3xl font-tech text-white">System Status</h1>
-                    <p className="text-nlc-text-muted text-sm">Welcome back, Operator {profile.name}</p>
-                    </div>
-                    <div className="text-right">
-                    <div className="flex gap-2 justify-end mb-1">
-                        <Badge type={isPrecise ? "precision" : "capacity"}>{profile.type} // {profile.engine}</Badge>
-                        {cnsFatigue && <Badge type="alert">CNS ALERT</Badge>}
-                    </div>
-                    <p className="text-xs text-nlc-text-muted font-mono">{new Date().toLocaleDateString()}</p>
-                    </div>
-                </header>
-                {cnsFatigue && (
-                    <div className="bg-red-900/20 border border-red-500/50 p-4 flex items-center gap-4 text-red-200">
-                        <Icons.AlertTriangle className="text-red-500" />
-                        <div>
-                            <h3 className="font-tech text-red-400">Stop Sign Activated</h3>
-                            <p className="text-sm">High Systemic Fatigue Detected (Low Grip/CO2). Recommended: Zone 2 Recovery.</p>
-                        </div>
-                    </div>
-                )}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <Card title="Dr. Quiet (Sleep)" icon={Icons.Moon} className={latest.sleep < 3 ? "border-red-500/30" : "border-nlc-green/30"}>
-                        <div className="text-2xl font-tech">{latest.sleep}/5</div>
-                        <div className="text-xs text-nlc-text-muted">Quality Index</div>
-                    </Card>
-                    <Card title="Dr. Diet (Fuel)" icon={Icons.Utensils} className={latest.digestion < 3 ? "border-red-500/30" : "border-nlc-green/30"}>
-                        <div className="text-2xl font-tech">{latest.digestion}/5</div>
-                        <div className="text-xs text-nlc-text-muted">Gut Health</div>
-                    </Card>
-                    <Card title="Dr. Happiness" icon={Icons.Smile} className={latest.mood < 3 ? "border-red-500/30" : "border-nlc-green/30"}>
-                        <div className="text-2xl font-tech">{latest.mood}/5</div>
-                        <div className="text-xs text-nlc-text-muted">Mindset</div>
-                    </Card>
-                    <Card title="Dr. Movement" icon={Icons.Move} className={latest.movement < 3 ? "border-red-500/30" : "border-nlc-green/30"}>
-                        <div className="text-2xl font-tech">{latest.movement}/5</div>
-                        <div className="text-xs text-nlc-text-muted">Training Status</div>
-                    </Card>
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <Card title="Load vs Readiness" icon={Icons.Activity} className="lg:col-span-2 min-h-[300px]">
-                    <ResponsiveContainer width="100%" height={250}>
-                        <AreaChart data={CHART_DATA}>
-                        <defs>
-                            <linearGradient id="colorReadiness" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#ea580c" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#ea580c" stopOpacity={0}/>
-                            </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#262626" />
-                        <XAxis dataKey="name" stroke="#525252" fontSize={12} tickLine={false} axisLine={false} />
-                        <YAxis stroke="#525252" fontSize={12} tickLine={false} axisLine={false} />
-                        <Tooltip 
-                            contentStyle={{ backgroundColor: '#171717', borderColor: '#262626', color: '#e5e5e5' }}
-                            itemStyle={{ color: '#ea580c' }} 
-                        />
-                        <Area type="monotone" dataKey="readiness" stroke="#ea580c" fillOpacity={1} fill="url(#colorReadiness)" />
-                        <Area type="monotone" dataKey="load" stroke="#525252" fill="transparent" strokeDasharray="5 5" />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                    </Card>
-                    <Card title="Recent Logs" icon={Icons.ClipboardList}>
-                        <div className="space-y-4">
-                            {MOCK_WORKOUTS.map((workout) => (
-                                <div key={workout.id} className="border-b border-nlc-border pb-2 last:border-0 last:pb-0">
-                                    <div className="flex justify-between items-center mb-1">
-                                        <span className="font-tech text-sm">{workout.title}</span>
-                                        <span className="text-xs text-nlc-text-muted">{workout.date}</span>
-                                    </div>
-                                    <div className="flex justify-between text-xs">
-                                    <span className={workout.date === '2023-10-24' ? "text-nlc-blue" : "text-nlc-orange"}>{workout.type}</span>
-                                    <span>RPE: {workout.rpe}</span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <Button variant="ghost" className="w-full mt-4 text-xs font-normal">View All History</Button>
-                    </Card>
-                </div>
-                </div>
-            );
-        };
-        const Assessment = ({ setProfile, setView }) => {
-            const [answers, setAnswers] = useState({ q1: 0, q2: 0, q4: 0 });
-            const calculateResults = () => {
-                const neurotype = answers.q1 > 0 ? "Capacity" : "Precision";
-                const physiology = answers.q4 > 0 ? "Fast" : "Slow";
-                setProfile(p => ({ ...p, type: neurotype, engine: physiology }));
-                setView('profile');
-            };
-            return (
-                <div className="max-w-2xl mx-auto space-y-8">
-                <header>
-                    <h1 className="text-3xl font-tech text-white mb-2">Calibration Sequence</h1>
-                    <p className="text-nlc-text-muted">Answer truthfully to calibrate your profile.</p>
-                </header>
-                <div className="space-y-6">
-                    <Card title="Neurotype Assessment (Brain)">
-                        <div className="space-y-4">
-                            <div>
-                                <p className="mb-2">1. Do you prefer variety or routine?</p>
-                                <div className="flex gap-2">
-                                    <Button variant={answers.q1 === 0 ? "secondary" : "ghost"} onClick={() => setAnswers({...answers, q1: 0})}>Routine</Button>
-                                    <Button variant={answers.q1 === 1 ? "secondary" : "ghost"} onClick={() => setAnswers({...answers, q1: 1})}>Variety</Button>
-                                </div>
-                            </div>
-                        </div>
-                    </Card>
-                    <Card title="Physiology Assessment (Body)">
-                        <div className="space-y-4">
-                            <div>
-                                <p className="mb-2">1. Are you naturally explosive or enduring?</p>
-                                <div className="flex gap-2">
-                                    <Button variant={answers.q4 === 1 ? "secondary" : "ghost"} onClick={() => setAnswers({...answers, q4: 1})}>Explosive</Button>
-                                    <Button variant={answers.q4 === 0 ? "secondary" : "ghost"} onClick={() => setAnswers({...answers, q4: 0})}>Enduring</Button>
-                                </div>
-                            </div>
-                        </div>
-                    </Card>
-                    <Button onClick={calculateResults} className="w-full">Calibrate & Save</Button>
-                </div>
-                </div>
-            );
-        };
-        const LogSession = ({ profile }) => {
-            const [predictedRpe, setPredictedRpe] = useState(5);
-            const [actualRpe, setActualRpe] = useState(null);
-            const isPrecise = profile.type === 'Precision';
-            return (
-                <div className="max-w-xl mx-auto space-y-6">
-                    <header>
-                        <h1 className="text-3xl font-tech text-white mb-2">Log Session</h1>
-                        <p className="text-nlc-text-muted">3-Click Frictionless Entry</p>
-                    </header>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <button className="bg-nlc-card border border-nlc-orange/50 p-4 text-left hover:bg-nlc-orange/10 transition">
-                            <div className="flex justify-between mb-2">
-                                <Badge type={isPrecise ? "precision" : "capacity"}>RECOMMENDED</Badge>
-                                <Icons.Zap size={16} className="text-nlc-orange" />
-                            </div>
-                            <h3 className="font-tech text-lg text-white">{isPrecise ? "Sniper Strength A" : "Diesel Mass Hybrid"}</h3>
-                            <p className="text-xs text-nlc-text-muted mt-1">Matched to {profile.type} Profile</p>
-                        </button>
-                        
-                        <button className="bg-nlc-card border border-nlc-border p-4 text-left hover:bg-neutral-800 transition">
-                            <div className="flex justify-between mb-2">
-                                <Badge type="recovery">RECOVERY</Badge>
-                                <Icons.Heart size={16} className="text-nlc-green" />
-                            </div>
-                            <h3 className="font-tech text-lg text-white">Zone 2 Flush</h3>
-                            <p className="text-xs text-nlc-text-muted mt-1">Active Recovery / Mobility</p>
-                        </button>
-                    </div>
-                    <Card title="Interoceptive Calibration">
-                        <div className="p-2 space-y-6">
-                            <div className="space-y-2">
-                                <label className="text-sm text-nlc-text-muted uppercase tracking-wide">Pre-Workout Prediction (RPE)</label>
-                                <input 
-                                    type="range" min="1" max="10" 
-                                    value={predictedRpe} 
-                                    onChange={(e) => setPredictedRpe(e.target.value)}
-                                    className="w-full accent-nlc-orange h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer"
-                                />
-                                <div className="flex justify-between text-xs font-mono text-nlc-text-muted">
-                                    <span>1 (Easy)</span>
-                                    <span className="text-nlc-orange font-bold text-lg">{predictedRpe}</span>
-                                    <span>10 (Fail)</span>
-                                </div>
-                            </div>
-                            <div className="pt-4 border-t border-nlc-border">
-                                <label className="text-sm text-nlc-text-muted uppercase tracking-wide">Actual Session RPE</label>
-                                <p className="text-xs text-nlc-text-muted mb-2">Complete this after the session.</p>
-                                <div className="grid grid-cols-10 gap-1">
-                                    {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                                        <button 
-                                        key={n}
-                                        onClick={() => setActualRpe(n)}
-                                        className={cn(
-                                            "aspect-square flex items-center justify-center font-mono text-sm border hover:bg-nlc-orange/20 transition-colors",
-                                            actualRpe === n ? "bg-nlc-orange text-white border-nlc-orange" : "bg-transparent border-nlc-border text-nlc-text-muted"
-                                        )}
-                                        >
-                                            {n}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    </Card>
-                    
-                    <Button className="w-full py-4 text-lg">Log Session Complete</Button>
-                </div>
-            );
-        };
-        const CheckIn = () => {
-            return (
-                <div className="max-w-xl mx-auto space-y-6">
-                    <header>
-                        <h1 className="text-3xl font-tech text-white mb-2">Daily System Check</h1>
-                        <p className="text-nlc-text-muted">4 Doctors Biofeedback</p>
-                    </header>
-                    <Card title="Objective Measures (The Data)">
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="text-xs text-nlc-text-muted uppercase">Grip Strength (KG)</label>
-                            <input type="number" className="w-full bg-neutral-900 border border-nlc-border p-2 mt-1 text-white font-mono" placeholder="00" />
-                        </div>
-                        <div>
-                            <label className="text-xs text-nlc-text-muted uppercase">CO2 Tolerance (Sec)</label>
-                            <input type="number" className="w-full bg-neutral-900 border border-nlc-border p-2 mt-1 text-white font-mono" placeholder="00" />
-                        </div>
-                    </div>
-                    </Card>
-                    <Card title="Subjective Measures (The Feeling)">
-                        <div className="space-y-4">
-                            {['Dr. Quiet (Sleep)', 'Dr. Diet (Digestion)', 'Dr. Happiness (Mood)', 'Dr. Movement (Soreness)'].map((label, i) => (
-                                <div key={i} className="flex flex-col gap-1">
-                                    <label className="text-xs text-nlc-text-muted uppercase">{label}</label>
-                                    <div className="flex gap-1 h-8">
-                                        {[1,2,3,4,5].map(n => (
-                                            <button key={n} className="flex-1 bg-neutral-900 border border-nlc-border hover:bg-nlc-blue/20 text-xs font-mono transition-colors">{n}</button>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </Card>
-                    <Button className="w-full py-4 text-lg">Submit Report</Button>
-                </div>
-            );
-        };
-        const Profile = ({ profile, setProfile }) => {
-            return (
-                <div className="max-w-xl mx-auto space-y-6">
-                    <header>
-                        <h1 className="text-3xl font-tech text-white mb-2">Owner's Manual</h1>
-                        <p className="text-nlc-text-muted">Profile & Settings</p>
-                    </header>
-                    <Card title="Operator Identity">
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-xs text-nlc-text-muted uppercase">Name</label>
-                                <input 
-                                    value={profile.name} 
-                                    onChange={(e) => setProfile({...profile, name: e.target.value})}
-                                    className="w-full bg-neutral-900 border border-nlc-border p-2 mt-1 text-white" 
-                                />
-                            </div>
-                        </div>
-                    </Card>
-                    <Card title="System Specifications">
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="p-4 bg-neutral-900 border border-nlc-border flex flex-col items-center justify-center text-center">
-                                <Icons.Brain className="text-nlc-blue mb-2" />
-                                <span className="font-tech text-nlc-blue">{profile.type}</span>
-                                <span className="text-xs text-nlc-text-muted">Neurotype</span>
-                            </div>
-                            <div className="p-4 bg-neutral-900 border border-nlc-border flex flex-col items-center justify-center text-center">
-                                <Icons.Activity className="text-nlc-orange mb-2" />
-                                <span className="font-tech text-nlc-orange">{profile.engine}</span>
-                                <span className="text-xs text-nlc-text-muted">Engine</span>
-                            </div>
-                        </div>
-                    </Card>
-                    <Card title="Override Protocols">
-                        <div className="flex items-center justify-between p-2">
-                            <div>
-                                <h4 className="font-tech text-white">Competition Mode</h4>
-                                <p className="text-xs text-nlc-text-muted">Forces maintenance/taper logic</p>
-                            </div>
-                            <button 
-                                onClick={() => setProfile({...profile, isCompeting: !profile.isCompeting})}
-                                className={cn("w-12 h-6 rounded-full relative transition-colors", profile.isCompeting ? "bg-nlc-orange" : "bg-neutral-800")}
-                            >
-                                <div className={cn("absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform", profile.isCompeting ? "translate-x-6" : "")} />
-                            </button>
-                        </div>
-                    </Card>
-                </div>
-            );
-        };
-        // --- App Shell ---
-        function App() {
-            const [view, setView] = useState('hub');
-            const [profile, setProfile] = useState({ 
-                name: 'Athlete', 
-                type: 'Precision', 
-                engine: 'Fast', 
-                isCompeting: false 
-            });
-            const renderView = () => {
-                switch(view) {
-                    case 'hub': return <Hub profile={profile} checkins={MOCK_CHECKINS} />;
-                    case 'assessment': return <Assessment setProfile={setProfile} setView={setView} />;
-                    case 'log': return <LogSession profile={profile} />;
-                    case 'checkin': return <CheckIn />;
-                    case 'profile': return <Profile profile={profile} setProfile={setProfile} />;
-                    default: return <Hub profile={profile} checkins={MOCK_CHECKINS} />;
-                }
-            };
-            const NavItem = ({ id, icon: Icon, label }) => (
-                <button 
-                onClick={() => setView(id)}
-                className={cn(
-                    "flex items-center gap-3 w-full p-3 rounded-md transition-all font-tech uppercase tracking-wide text-sm",
-                    view === id 
-                        ? "bg-nlc-orange/10 text-nlc-orange border-l-2 border-nlc-orange" 
-                        : "text-nlc-text-muted hover:bg-white/5 hover:text-white border-l-2 border-transparent"
-                )}
-                >
-                <Icon size={20} />
-                <span>{label}</span>
-                </button>
-            );
-            return (
-                <div className="min-h-screen bg-nlc-dark flex text-gray-200 selection:bg-nlc-orange/30">
-                <aside className="w-64 border-r border-nlc-border p-6 hidden md:flex flex-col bg-opacity-50 bg-black/20 fixed h-full">
-                    <div className="mb-10 flex items-center gap-2">
-                        <div className="w-8 h-8 bg-nlc-orange flex items-center justify-center font-bold text-black border border-white/10">N</div>
-                        <div>
-                            <h1 className="font-tech text-xl leading-none tracking-widest">NLC</h1>
-                            <p className="text-[0.6rem] text-nlc-text-muted tracking-[0.2em] font-sans">PERFORMANCE</p>
-                        </div>
-                    </div>
-                    <nav className="space-y-2 flex-1">
-                    <NavItem id="hub" icon={Icons.LayoutDashboard} label="Hub" />
-                    <NavItem id="log" icon={Icons.Dumbbell} label="Log Session" />
-                    <NavItem id="checkin" icon={Icons.ClipboardList} label="Check-In" />
-                    <NavItem id="assessment" icon={Icons.Brain} label="Calibration" />
-                    </nav>
-                    
-                    <div className="pt-6 border-t border-nlc-border">
-                        <NavItem id="profile" icon={Icons.User} label="Owner's Manual" />
-                    </div>
-                </aside>
-                <main className="flex-1 p-4 md:p-8 md:ml-64 overflow-y-auto min-h-screen relative">
-                    <div className="md:hidden flex justify-between items-center mb-6 border-b border-nlc-border pb-4">
-                        <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 bg-nlc-orange flex items-center justify-center font-bold text-black text-xs">N</div>
-                            <h1 className="font-tech">NLC Performance</h1>
-                        </div>
-                        <button onClick={() => setView('profile')}><Icons.User size={20} /></button>
-                    </div>
-                    <div className="max-w-5xl mx-auto animate-in fade-in duration-500 pb-20 md:pb-0">
-                        {renderView()}
-                    </div>
-                    <div className="md:hidden fixed bottom-0 left-0 right-0 bg-nlc-card border-t border-nlc-border p-2 flex justify-around z-50 pb-safe">
-                        <button onClick={() => setView('hub')} className={cn("p-2", view === 'hub' ? "text-nlc-orange" : "text-gray-500")}><Icons.LayoutDashboard /></button>
-                        <button onClick={() => setView('log')} className={cn("p-2", view === 'log' ? "text-nlc-orange" : "text-gray-500")}><Icons.Dumbbell /></button>
-                        <button onClick={() => setView('checkin')} className={cn("p-2", view === 'checkin' ? "text-nlc-orange" : "text-gray-500")}><Icons.ClipboardList /></button>
-                    </div>
-                </main>
-                </div>
-            );
-        }
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
+             </div>
+           </Card>
+        </div>
+      );
+    }
+
+    return (
+      <div className="max-w-4xl mx-auto space-y-8">
+        <header><h1 className="text-2xl font-black text-white uppercase">Initialize Protocol</h1></header>
+        
+        {!profile.isCompeting && (
+          <div className="space-y-4">
+            <SectionHeader title="Recommended For Your Profile" icon={Zap} />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {showPrecisionFast && <ProgramButton templateKey="pf_strength" label="Sniper Strength" subLabel="Low Reps / High Rest" />}
+              {showPrecisionSlow && <ProgramButton templateKey="ps_strength" label="Architect Strength" subLabel="Tempo / Control" />}
+              {showCapacityFast && <ProgramButton templateKey="cf_hybrid" label="Blitz Hybrid" subLabel="EMOM / Power" />}
+              {showCapacitySlow && <ProgramButton templateKey="cs_hypertrophy" label="Diesel Mass" subLabel="High Volume Pump" />}
+              {(!profile.os || profile.os === 'Unknown') && <div className="text-gray-500 text-sm italic col-span-2">Complete Diagnostic to see recommendations.</div>}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <SectionHeader title="Recovery & Maintenance" icon={Heart} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <ProgramButton templateKey="zone_2" label="Zone 2 Base" subLabel="30m Nose Only" />
+            <ProgramButton templateKey="cool_down_full" label="Full Mobility" subLabel="Flow" />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="h-screen w-full flex bg-[#0a0a0a] text-gray-300 font-sans overflow-hidden">
+      <div className="hidden md:block"><Sidebar /></div>
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Mobile Header */}
+        <div className="md:hidden bg-black p-4 flex justify-between items-center border-b border-gray-800">
+           <div className="font-bold tracking-wider text-white">NLC <span className="text-orange-500">PERF.</span></div>
+           <div className="text-xs font-mono text-orange-500">{profile.os.substring(0,3)}//{profile.engine.substring(0,3)}</div>
+        </div>
+        {/* Mobile Nav */}
+        <div className="md:hidden bg-black border-b border-gray-800 flex justify-around p-2">
+           <button onClick={() => setView('dashboard')} className={`p-2 rounded ${view==='dashboard'?'text-orange-500':'text-gray-600'}`}><LayoutDashboard size={20}/></button>
+           <button onClick={() => setView('checkin')} className={`p-2 rounded ${view==='checkin'?'text-orange-500':'text-gray-600'}`}><ClipboardList size={20}/></button>
+           <button onClick={() => setView('log')} className={`p-2 rounded ${view==='log'?'text-orange-500':'text-gray-600'}`}><PlusCircle size={20}/></button>
+        </div>
+
+        <main className="flex-1 overflow-y-auto p-4 md:p-8">
+          {view === 'dashboard' && <DashboardView />}
+          {view === 'assessment' && <AssessmentView />}
+          {view === 'checkin' && <CheckInView />}
+          {view === 'log' && <LogWorkoutView />}
+          {/* History/Settings placeholders */}
+          {view === 'history' && <div className="text-center pt-20 text-gray-600 font-mono">NO LOGS FOUND</div>}
+          {view === 'settings' && <div className="text-center pt-20 text-gray-600 font-mono">SYSTEM CONFIG LOCKED</div>}
+        </main>
+      </div>
+    </div>
+  );
+}
